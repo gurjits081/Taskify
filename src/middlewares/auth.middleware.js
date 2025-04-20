@@ -22,7 +22,7 @@ export const isLoggedIn = asyncHandler(async (req, res, next) => {
   }
   const decode = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
 
-  const user = await User.findOne({ _id: decode._id });
+  const user = await User.findById(decode._id);
 
   console.log(user)
 
