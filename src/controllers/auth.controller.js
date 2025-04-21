@@ -33,12 +33,12 @@ const registerUser = asyncHandler(async (req, res) => {
   await newUser.save({ validateBeforeSave: false });
 
   // generate verification URL
-  const verificationURL = `${process.env.BASE_URL}/api/v1/users/verify/${unHashedToken}`;
+  const verificationURL = `${process.env.BASE_URL}/api/v1/users/verify/${hashedToken}`;
 
   // send verification email
   sendMail({
     email: newUser.email,
-    subject: "Please verify your email address",
+    subject: 'Please verify your email address',
     mailGenContent: emailVerificationMailGenContent(newUser.username, verificationURL),
   });
 
@@ -93,5 +93,21 @@ const logoutUser = asyncHandler(async (req, res) => {
   res.status(200).json(new APIResponse(200, 'Logout Successful'));
 });
 
+const verifyEmail = asyncHandler(async (req, res) => {
+  const { token } = req.params;
 
-export { registerUser, loginUser, logoutUser };
+  const user = await User.findOne({ emailVerificationToken: token });
+
+  if (!user || user.emailVerificationExpiry < Date.now()) {
+    return res.status(400).json(new ApIError(400, 'Invalid Token'));
+  }
+
+  user.isEmailVerified = true;
+  user.emailVerificationToken = undefined;
+  user.emailVerificationExpiry = undefined;
+  await user.save({ validateBeforeSave: false });
+
+  res.status(200).json(new APIResponse(200, 'User verified successfully'));
+});
+
+export { registerUser, loginUser, logoutUser, verifyEmail };
