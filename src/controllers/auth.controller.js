@@ -1,7 +1,8 @@
 import { asyncHandler } from '../utils/async-handler.js';
-import User from '../models/user.model.js'
-import { ApIError } from '../utils/api-error.js'
-import {APIResponse} from '../utils/api-response.js'
+import User from '../models/user.model.js';
+import { ApIError } from '../utils/api-error.js';
+import { APIResponse } from '../utils/api-response.js';
+import { sendMail, emailVerificationMailGenContent } from '../utils/mail.js';
 
 const registerUser = asyncHandler(async (req, res) => {
   const { email, username, password, fullName, role } = req.body;
@@ -9,8 +10,8 @@ const registerUser = asyncHandler(async (req, res) => {
   //check if user is already existed
   const existingUser = await User.findOne({ email });
 
-  if(existingUser) {
-    return res.status(400).json(new ApIError(400, "Email already in use"))
+  if (existingUser) {
+    return res.status(400).json(new ApIError(400, 'Email already in use'));
   }
 
   const newUser = await User.create({
@@ -18,65 +19,70 @@ const registerUser = asyncHandler(async (req, res) => {
     username,
     password,
     fullName,
-    role
-  })
+    role,
+  });
 
-  if(!newUser) {
-    return res.status(400).json(new ApIError(400, "User not registered"))
+  if (!newUser) {
+    return res.status(400).json(new ApIError(400, 'User not registered'));
   }
 
   // generate verification token
   const { hashedToken, unHashedToken, tokenExpiry } = newUser.generateTemporaryToken();
   newUser.emailVerificationToken = hashedToken;
   newUser.emailVerificationExpiry = tokenExpiry;
-  await newUser.save({validateBeforeSave: false});
+  await newUser.save({ validateBeforeSave: false });
 
-  
+  // generate verification URL
+  const verificationURL = `${process.env.BASE_URL}/api/v1/users/verify/${unHashedToken}`;
 
+  // send verification email
+  sendMail({
+    email: newUser.email,
+    subject: "Please verify your email address",
+    mailGenContent: emailVerificationMailGenContent(newUser.username, verificationURL),
+  });
 
   // fetch saved user without password
   const userWithoutPassword = await User.findById(newUser._id).select('-password');
 
-  res.status(200).json(new APIResponse(200, userWithoutPassword, "User registered successfully"));
-
+  res.status(200).json(new APIResponse(200, userWithoutPassword, 'User registered successfully'));
 });
 
-const loginUser = asyncHandler(async(req, res) => {
-    const { email, password} = req.body;
+const loginUser = asyncHandler(async (req, res) => {
+  const { email, password } = req.body;
 
-    const user = await User.findOne({ email });
+  const user = await User.findOne({ email });
 
-    if(!user){
-      res.status(400).json(new ApIError(400, "Invalid email or password"))
-    }
+  if (!user) {
+    res.status(400).json(new ApIError(400, 'Invalid email or password'));
+  }
 
-    const isPasswordCorrect = await user.isPasswordCorrect(password);
-    if(!isPasswordCorrect) {
-      res.status(400).json(new ApIError(400, "Invalid email or password"))
-    }
+  const isPasswordCorrect = await user.isPasswordCorrect(password);
+  if (!isPasswordCorrect) {
+    res.status(400).json(new ApIError(400, 'Invalid email or password'));
+  }
 
-   
-    const token = await user.generateAccessToken();
-    
-    const cookiePtions = {
-      httpOnly: true,
-      sameSite: "strict",
-      secure: false,
-      maxAge: 1000 * 60 * 60 * 24
-    }
+  const token = await user.generateAccessToken();
 
-    res.cookie("token", token, cookiePtions);
+  const cookiePtions = {
+    httpOnly: true,
+    sameSite: 'strict',
+    secure: false,
+    maxAge: 1000 * 60 * 60 * 24,
+  };
 
-    const userData = {
-      id: user._id,
-      name: user.name,
-      role: user.role
-    }
+  res.cookie('token', token, cookiePtions);
 
-    res.status(200).json(new APIResponse(200, userData, 'Login Successful'));
-})
+  const userData = {
+    id: user._id,
+    name: user.name,
+    role: user.role,
+  };
 
-const logoutUser = asyncHandler(async(req, res) => {
+  res.status(200).json(new APIResponse(200, userData, 'Login Successful'));
+});
+
+const logoutUser = asyncHandler(async (req, res) => {
   res.clearCookie('token', {
     httpOnly: true,
     sameSite: 'Strict',
@@ -84,9 +90,8 @@ const logoutUser = asyncHandler(async(req, res) => {
     expires: new Date(0),
   });
 
-  res.status(200).json(new APIResponse(200, "Logout Successful"))
-})
-
+  res.status(200).json(new APIResponse(200, 'Logout Successful'));
+});
 
 
 export { registerUser, loginUser, logoutUser };

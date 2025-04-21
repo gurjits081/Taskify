@@ -3,6 +3,7 @@ import { ApIError } from '../utils/api-error.js';
 import jwt from 'jsonwebtoken';
 import User from '../models/user.model.js';
 
+
 export const isLoggedIn = asyncHandler(async (req, res, next) => {
   console.log('=== Auth Middleware Debug ===');
   console.log('Cookies:', req.cookies);
