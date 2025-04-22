@@ -2,7 +2,11 @@ import { asyncHandler } from '../utils/async-handler.js';
 import User from '../models/user.model.js';
 import { ApIError } from '../utils/api-error.js';
 import { APIResponse } from '../utils/api-response.js';
-import { sendMail, emailVerificationMailGenContent } from '../utils/mail.js';
+import {
+  sendMail,
+  emailVerificationMailGenContent,
+  forgotPasswordMailgenContent,
+} from '../utils/mail.js';
 
 const registerUser = asyncHandler(async (req, res) => {
   const { email, username, password, fullName, role } = req.body;
@@ -119,9 +123,9 @@ const resendEmailVerification = asyncHandler(async (req, res) => {
     return res.status(400).json(new ApIError(400, "User doesn't exist"));
   }
   // check already verified email
-   if (user.isEmailVerified) {
-     return res.status(400).json(new ApIError(400, 'Email already verified'));
-   }
+  if (user.isEmailVerified) {
+    return res.status(400).json(new ApIError(400, 'Email already verified'));
+  }
 
   // generate verification token
   const { hashedToken, unHashedToken, tokenExpiry } = user.generateTemporaryToken();
@@ -142,4 +146,54 @@ const resendEmailVerification = asyncHandler(async (req, res) => {
   res.status(200).json(new APIResponse(200, 'Email sent successfully'));
 });
 
-export { registerUser, loginUser, logoutUser, verifyEmail, resendEmailVerification };
+const forgotPasswordRequest = asyncHandler(async (req, res) => {
+  const { email } = req.body;
+
+  //user look up
+  const user = await User.findOne({ email });
+  if (!user) {
+    return res.status(400).json(new ApIError(400, 'Invalid email address'));
+  }
+
+  const { hashedToken, unHashedToken, tokenExpiry } = user.generateTemporaryToken();
+  user.forgotPasswordToken = hashedToken;
+  user.forgotPasswordExpiry = tokenExpiry;
+  await user.save({ validateBeforeSave: false });
+
+  const passwordResetUrl = `${process.env.BASE_URL}/api/v1/users/forgot-password/${hashedToken}`;
+
+  sendMail({
+    email: user.email,
+    subject: 'Please reset your password',
+    mailGenContent: forgotPasswordMailgenContent(user.username, passwordResetUrl),
+  });
+
+  res.status(200).json(new APIResponse(200, 'Password reset email send successfully'));
+});
+
+const resetForgottenPassword = asyncHandler(async (req, res) => {
+  const { token } = req.params;
+  const { password } = req.body;
+
+  const user = await User.findOne({ forgotPasswordToken: token });
+  if (!user || user.forgotPasswordExpiry < Date.now()) {
+    return res.status(400).json(new ApIError(400, 'Invalid Token'));
+  }
+
+  user.password = password;
+  user.forgotPasswordExpiry = undefined;
+  user.forgotPasswordToken = undefined;
+  await user.save();
+
+  res.status(200).json(new APIResponse(200, 'Password reset successful'));
+});
+
+export {
+  registerUser,
+  loginUser,
+  logoutUser,
+  verifyEmail,
+  resendEmailVerification,
+  forgotPasswordRequest,
+  resetForgottenPassword,
+};
